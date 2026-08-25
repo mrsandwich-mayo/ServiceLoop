@@ -1,36 +1,29 @@
 import { MongoClient } from 'mongodb';
-import { Resolver } from 'dns/promises';
 
 /**
- * Resolves a mongodb+srv:// URI to a direct mongodb:// URI using a public DNS server.
- * This bypasses local ISP/network DNS that may block SRV record lookups.
+ * Transforms an Atlas mongodb+srv URI into a direct mongodb URI 
+ * by hardcoding the standard Atlas replica set shards.
+ * This completely bypasses all DNS SRV lookups which your network is blocking.
  */
-async function resolveSrvUri(uri: string): Promise<string> {
+function resolveSrvUri(uri: string): string {
   const match = uri.match(/^mongodb\+srv:\/\/([^:]+):([^@]+)@([^/?]+)(.*)/);
   if (!match) return uri; // not an SRV URI, return as-is
 
   const [, username, password, srvHostname, rest] = match;
 
-  // Use Google public DNS (8.8.8.8) to resolve the SRV record
-  const resolver = new Resolver();
-  resolver.setServers(['8.8.8.8', '1.1.1.1']);
+  // Standard Atlas replica set shards follow this exact pattern:
+  const baseName = srvHostname.split('.')[0]; // e.g., slcluster0
+  const domainRest = srvHostname.substring(baseName.length); // e.g., .nbfagyq.mongodb.net
 
-  // Resolve SRV records to get real hostnames and ports
-  const srvRecords = await resolver.resolveSrv(`_mongodb._tcp.${srvHostname}`);
-  const hosts = srvRecords.map((r) => `${r.name}:${r.port}`).join(',');
+  const hosts = [
+    `${baseName}-shard-00-00${domainRest}:27017`,
+    `${baseName}-shard-00-01${domainRest}:27017`,
+    `${baseName}-shard-00-02${domainRest}:27017`
+  ].join(',');
 
-  // Resolve TXT record to get extra options (like authSource, replicaSet)
-  let txtOptions = '';
-  try {
-    const txtRecords = await resolver.resolveTxt(srvHostname);
-    txtOptions = txtRecords.flat().join('&');
-  } catch {
-    // TXT record is optional
-  }
-
-  // Parse any options from the original URI (e.g. ?appName=SLCluster0)
+  // Parse any options from the original URI
   const originalParams = rest.replace(/^\/[^?]*/, '').replace(/^\?/, '');
-  const allParams = [txtOptions, originalParams, 'tls=true']
+  const allParams = [originalParams, 'tls=true', 'authSource=admin', 'replicaSet=atlas-h2v6v9-shard-0']
     .filter(Boolean)
     .join('&');
 
@@ -48,23 +41,21 @@ if (process.env.NODE_ENV === 'development') {
   };
 
   if (!globalWithMongo._mongoClientPromise) {
-    globalWithMongo._mongoClientPromise = resolveSrvUri(uri).then((resolvedUri) => {
-      const client = new MongoClient(resolvedUri, {
-        serverSelectionTimeoutMS: 15000,
-        connectTimeoutMS: 15000,
-      });
-      return client.connect();
-    });
-  }
-  clientPromise = globalWithMongo._mongoClientPromise;
-} else {
-  clientPromise = resolveSrvUri(uri).then((resolvedUri) => {
-    const client = new MongoClient(resolvedUri, {
+    const directUri = resolveSrvUri(uri);
+    const client = new MongoClient(directUri, {
       serverSelectionTimeoutMS: 15000,
       connectTimeoutMS: 15000,
     });
-    return client.connect();
+    globalWithMongo._mongoClientPromise = client.connect();
+  }
+  clientPromise = globalWithMongo._mongoClientPromise;
+} else {
+  const directUri = resolveSrvUri(uri);
+  const client = new MongoClient(directUri, {
+    serverSelectionTimeoutMS: 15000,
+    connectTimeoutMS: 15000,
   });
+  clientPromise = client.connect();
 }
 
 export default clientPromise;
