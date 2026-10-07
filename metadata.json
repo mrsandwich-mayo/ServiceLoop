@@ -1,0 +1,9 @@
+{
+  "name": "ServiceLoop",
+  "description": "CRM for small businesses",
+  "prompt": "ServiceLoop - CRM for small businesses",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

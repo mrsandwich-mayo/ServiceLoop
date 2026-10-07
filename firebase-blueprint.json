@@ -1,0 +1,256 @@
+{
+  "entities": {
+    "Business": {
+      "title": "Business",
+      "description": "Multi-tenant business profile isolated by owner UID",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the business owner",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string",
+          "description": "Account email address",
+          "format": "email",
+          "maxLength": 100
+        },
+        "phone": {
+          "type": "string",
+          "description": "Contact phone number",
+          "maxLength": 30
+        },
+        "ownerName": {
+          "type": "string",
+          "description": "Full name of the business owner",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "businessName": {
+          "type": "string",
+          "description": "Registered business name",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "businessType": {
+          "type": "string",
+          "description": "Category or industry of the business",
+          "minLength": 1,
+          "maxLength": 50
+        },
+        "location": {
+          "type": "string",
+          "description": "Operating city, district, or address",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
+        }
+      },
+      "required": ["ownerId", "ownerName", "businessName", "businessType", "location", "createdAt", "updatedAt"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Client record private to the business owner",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Owner UID",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "description": "Client full name",
+          "maxLength": 100
+        },
+        "company": {
+          "type": "string",
+          "description": "Company or shop name",
+          "maxLength": 100
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address",
+          "maxLength": 100
+        },
+        "phone": {
+          "type": "string",
+          "description": "Phone number",
+          "maxLength": 30
+        },
+        "status": {
+          "type": "string",
+          "enum": ["lead", "active", "completed"],
+          "description": "Client status"
+        },
+        "totalValue": {
+          "type": "number",
+          "description": "Total value of closed work in INR"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Internal notes",
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "name", "phone", "status"]
+    },
+    "FollowUp": {
+      "title": "FollowUp",
+      "description": "Follow-up schedule private to the business owner",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "clientName": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "scheduledDate": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "status": {
+          "type": "string",
+          "enum": ["scheduled", "completed", "cancelled"]
+        },
+        "type": {
+          "type": "string",
+          "enum": ["call", "meeting", "visit", "message"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "clientName", "scheduledDate", "status"]
+    },
+    "WorkOrder": {
+      "title": "WorkOrder",
+      "description": "Job order private to the business owner",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "clientName": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "dueDate": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["low", "medium", "high"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "in-progress", "completed"]
+        },
+        "amount": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "title", "clientName", "status"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Financial billing record private to the business owner",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "clientName": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "amount": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["paid", "pending"]
+        },
+        "date": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "clientName", "description", "amount", "status"]
+    }
+  },
+  "firestore": {
+    "/businesses/{businessId}": {
+      "schema": {
+        "$ref": "#/entities/Business"
+      },
+      "description": "Stores individual business profile isolated by owner UID"
+    },
+    "/businesses/{businessId}/clients/{clientId}": {
+      "schema": {
+        "$ref": "#/entities/Client"
+      },
+      "description": "Stores client records scoped strictly to the authenticated owner"
+    },
+    "/businesses/{businessId}/followups/{followupId}": {
+      "schema": {
+        "$ref": "#/entities/FollowUp"
+      },
+      "description": "Stores client follow-ups scoped strictly to the authenticated owner"
+    },
+    "/businesses/{businessId}/tasks/{taskId}": {
+      "schema": {
+        "$ref": "#/entities/WorkOrder"
+      },
+      "description": "Stores tasks and work orders scoped strictly to the authenticated owner"
+    },
+    "/businesses/{businessId}/invoices/{invoiceId}": {
+      "schema": {
+        "$ref": "#/entities/Invoice"
+      },
+      "description": "Stores invoices and billing scoped strictly to the authenticated owner"
+    }
+  }
+}
