@@ -1,26 +1,36 @@
-# Security Specification - ServiceLoop
+# Security Specification - ServiceLoop V1 (Firestore Foundation)
 
-## 1. Data Invariants
-- A Business document must belong to the authenticated user (`ownerId == request.auth.uid`).
-- `ownerId` and `createdAt` are immutable after document creation.
-- A user can only read, write, or list their own Business documents.
-- Document keys must be strictly validated with no ghost/unauthorized fields.
-- String fields must strictly respect length boundaries (`businessName` <= 100, `ownerName` <= 100, `businessType` <= 50).
-- Unauthenticated users cannot read or write any documents.
+## 1. Data Invariants & Architecture
+ServiceLoop V1 establishes Cloud Firestore as the primary database with 6 top-level collections:
+1. `businesses`
+2. `business_verifications`
+3. `customers`
+4. `services`
+5. `appointments`
+6. `follow_ups`
+
+### Core Tenet & Relationship Rules:
+- Multi-tenancy isolation: Every child document (`business_verifications`, `customers`, `services`, `appointments`, `follow_ups`) is owned by a single business and explicitly contains `businessId`.
+- A user can ONLY access documents belonging to their own business (`isBusinessOwner(businessId)`).
+- Document IDs must conform to `isValidId` (`[a-zA-Z0-9_\-]+`, size 1..128).
+- Query isolation: `allow list` evaluates `resource.data.businessId == request.auth.uid` (or `ownerId` for `businesses`) with no costly `get()` calls in list contexts.
+- Government ID PII protection: Sensitive government identity information (like raw Aadhaar) is strictly forbidden. Only masked/safe reference strings are permitted.
+- Verification status tampering: Business owners can submit verification requests with status `PENDING`, but cannot self-verify (`VERIFIED`) or forge admin reviews.
 
 ## 2. Dirty Dozen Payloads (Target: PERMISSION_DENIED)
-1. **Unauthenticated Read**: Attempt to read `/businesses/{businessId}` without auth token.
-2. **Unauthenticated Write**: Attempt to create `/businesses/{businessId}` without auth token.
-3. **Identity Spoofing on Create**: Authenticated user `uid_123` attempts to create `/businesses/b1` with `ownerId: "uid_999"`.
-4. **Cross-Tenant Read**: Authenticated user `uid_123` attempts to read `/businesses/b2` owned by `uid_456`.
-5. **Cross-Tenant Update**: Authenticated user `uid_123` attempts to update `/businesses/b2` owned by `uid_456`.
-6. **Cross-Tenant Delete**: Authenticated user `uid_123` attempts to delete `/businesses/b2` owned by `uid_456`.
-7. **Ghost Field Injection**: Authenticated user `uid_123` sends payload with ghost field `{ role: "admin" }` or `{ isVerified: true }`.
-8. **Owner Reassignment Attack**: Authenticated user `uid_123` attempts to update their own business document changing `ownerId` to `uid_target`.
-9. **Creation Timestamp Tampering on Update**: Authenticated user attempts to modify immutable `createdAt` timestamp.
-10. **Denial-of-Wallet Long String Injection**: Authenticated user sends a 50KB string in `businessName` exceeding maximum allowed length of 100.
-11. **ID Poisoning Attack**: Attempt to create document with 200-character malicious string ID or invalid characters.
-12. **Blanket Query Scraping**: Attempt to list all `/businesses` without filtering by `ownerId == request.auth.uid`.
+1. **Unauthenticated Read on Any Collection**: Attempting `get` or `list` on `businesses`, `customers`, `services`, `appointments`, or `follow_ups` without authentication token.
+2. **Cross-Tenant Business Read**: User A (`uid_A`) attempting to read `/businesses/uid_B`.
+3. **Cross-Tenant Customer Read**: User A attempting to read `/customers/cust_999` where `businessId == "uid_B"`.
+4. **Cross-Tenant Service Write**: User A attempting to create or update `/services/srv_1` with `businessId: "uid_B"`.
+5. **Cross-Tenant Appointment Modification**: User A attempting to update or delete `/appointments/apt_1` belonging to `uid_B`.
+6. **Cross-Tenant Follow-Up Snooping**: User A attempting to query `/follow_ups` belonging to `uid_B`.
+7. **Business ID Reassignment (Orphan Write)**: User A attempting to update an existing customer document by changing `businessId` from `"uid_A"` to `"uid_B"`.
+8. **Self-Verification Privilege Escalation**: User A attempting to create `/business_verifications/v1` with `verificationStatus: "VERIFIED"` or with non-null `reviewedBy`.
+9. **Global List Query Scraping**: Attempting `allow list` without filtering query by authenticated business ID (`resource.data.businessId == request.auth.uid`).
+10. **ID Poisoning Attack**: Attempting document operations with path IDs containing invalid characters, null bytes, or oversized length (> 128 chars).
+11. **Denial-of-Wallet Payload Flooding**: Submitting payload with strings exceeding size bounds (e.g., > 1000 characters in notes).
+12. **Owner Impersonation on Business Creation**: Authenticated user `uid_A` attempting to create `/businesses/uid_A` with `ownerId: "uid_victim"`.
+13. **Tenant Tampering with Verification Status**: Business owner attempting to update `/businesses/{uid}` to `verificationStatus: "VERIFIED"`, `REJECTED`, or `SUSPENDED`, or altering `createdAt`.
 
 ## 3. Test Invariant Mapping
-Each of the 12 scenarios above is mathematically guarded by the Eight Pillars implemented in `firestore.rules`.
+All 12 attack vectors are blocked by attribute-based access control (ABAC) and schema validation in `firestore.rules`.

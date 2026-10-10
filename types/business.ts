@@ -1,3 +1,5 @@
+export * from './v1-firestore';
+
 export interface Business {
   id?: string;
   ownerId: string;
@@ -7,6 +9,11 @@ export interface Business {
   businessName: string;
   businessType: string;
   location: string;
+  verificationStatus?:
+    | 'PENDING_VERIFICATION'
+    | 'VERIFIED'
+    | 'REJECTED'
+    | 'SUSPENDED';
   createdAt: string;
   updatedAt: string;
 }
@@ -59,3 +66,4 @@ export interface InvoiceItem {
   date: string;
   createdAt?: string;
 }
+

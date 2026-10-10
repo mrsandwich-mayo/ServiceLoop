@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { handleFirestoreError, OperationType } from '@/lib/firestoreErrors';
 import { useAuth } from '@/hooks/useAuth';
@@ -56,7 +56,6 @@ export default function OnboardingPage() {
       const sanitizedLocation = location.trim().slice(0, 120);
       const sanitizedPhone = phone.trim().slice(0, 50);
 
-      const now = new Date().toISOString();
       const businessData = {
         ownerId: user.uid,
         businessName: sanitizedBusinessName,
@@ -65,44 +64,25 @@ export default function OnboardingPage() {
         location: sanitizedLocation,
         phone: sanitizedPhone,
         email: user.email || '',
-        createdAt: now,
-        updatedAt: now,
+        verificationStatus: 'PENDING_VERIFICATION' as const,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       };
       
       const docPath = `businesses/${user.uid}`;
       try {
         await setDoc(doc(db, 'businesses', user.uid), businessData);
       } catch (fsErr: unknown) {
-        console.warn('Firestore setDoc failed, falling back to API:', fsErr);
-        handleFirestoreError(fsErr, OperationType.CREATE, docPath);
+        console.warn('Firestore setDoc notice:', fsErr);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(`serviceloop_registered_business_${user.uid}`, JSON.stringify(businessData));
+          localStorage.setItem('serviceloop_demo_business', JSON.stringify(businessData));
+        }
+        if (!user.isDemo) {
+          handleFirestoreError(fsErr, OperationType.CREATE, docPath);
+        }
       }
 
-      // Initialize fresh isolated CRM storage
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(
-          `serviceloop_crm_${user.uid}`,
-          JSON.stringify({
-            customers: [],
-            tasks: [],
-            invoices: [],
-            followups: [],
-          })
-        );
-      }
-
-      // Also notify API route for dual persistence
-      try {
-        await fetch('/api/business', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(businessData),
-        });
-      } catch {
-        // secondary backup ignore
-      }
-      
       await checkOnboarded();
       router.push('/dashboard');
     } catch (err: unknown) {

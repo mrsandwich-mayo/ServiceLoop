@@ -2,7 +2,7 @@
   "entities": {
     "Business": {
       "title": "Business",
-      "description": "Multi-tenant business profile isolated by owner UID",
+      "description": "V1 core business tenant profile isolated by owner UID",
       "type": "object",
       "properties": {
         "ownerId": {
@@ -11,16 +11,11 @@
           "minLength": 1,
           "maxLength": 128
         },
-        "email": {
+        "businessName": {
           "type": "string",
-          "description": "Account email address",
-          "format": "email",
+          "description": "Registered trade name of the business",
+          "minLength": 1,
           "maxLength": 100
-        },
-        "phone": {
-          "type": "string",
-          "description": "Contact phone number",
-          "maxLength": 30
         },
         "ownerName": {
           "type": "string",
@@ -28,23 +23,152 @@
           "minLength": 1,
           "maxLength": 100
         },
-        "businessName": {
+        "businessType": {
           "type": "string",
-          "description": "Registered business name",
+          "description": "Industry vertical or service trade category",
           "minLength": 1,
           "maxLength": 100
         },
-        "businessType": {
+        "verificationStatus": {
           "type": "string",
-          "description": "Category or industry of the business",
-          "minLength": 1,
-          "maxLength": 50
+          "enum": [
+            "PENDING_VERIFICATION",
+            "VERIFIED",
+            "REJECTED",
+            "SUSPENDED"
+          ],
+          "description": "Business identity verification status"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
         },
         "location": {
           "type": "string",
-          "description": "Operating city, district, or address",
-          "minLength": 1,
+          "description": "Operating city, district, or physical base",
           "maxLength": 120
+        },
+        "phone": {
+          "type": "string",
+          "description": "Business contact phone",
+          "maxLength": 50
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Business contact email",
+          "maxLength": 120
+        }
+      },
+      "required": [
+        "ownerId",
+        "businessName",
+        "ownerName",
+        "businessType",
+        "verificationStatus",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "BusinessVerification": {
+      "title": "BusinessVerification",
+      "description": "Business identity verification record with safe masked identifiers",
+      "type": "object",
+      "properties": {
+        "businessId": {
+          "type": "string",
+          "description": "ID of the associated business",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "verificationStatus": {
+          "type": "string",
+          "enum": [
+            "PENDING",
+            "VERIFIED",
+            "REJECTED"
+          ],
+          "description": "Verification review decision"
+        },
+        "documentType": {
+          "type": "string",
+          "description": "Document classification such as GSTIN or Trade License",
+          "minLength": 1,
+          "maxLength": 50
+        },
+        "documentReference": {
+          "type": "string",
+          "description": "Masked non-sensitive document identifier",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "submittedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Submission timestamp"
+        },
+        "reviewedBy": {
+          "type": "string",
+          "description": "UID of reviewing administrator or null",
+          "maxLength": 128
+        },
+        "reviewedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Review completion timestamp or null"
+        },
+        "rejectionReason": {
+          "type": "string",
+          "description": "Reason notes in case of verification rejection",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "businessId",
+        "verificationStatus",
+        "documentType",
+        "documentReference",
+        "submittedAt"
+      ]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Client profile scoped strictly to a specific business",
+      "type": "object",
+      "properties": {
+        "businessId": {
+          "type": "string",
+          "description": "Owning business ID",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "description": "Full name of the customer",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "phone": {
+          "type": "string",
+          "description": "Contact phone number",
+          "maxLength": 50
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Contact email address",
+          "maxLength": 120
+        },
+        "notes": {
+          "type": "string",
+          "description": "Customer service history and preferences",
+          "maxLength": 1000
         },
         "createdAt": {
           "type": "string",
@@ -57,168 +181,210 @@
           "description": "Last update timestamp"
         }
       },
-      "required": ["ownerId", "ownerName", "businessName", "businessType", "location", "createdAt", "updatedAt"]
+      "required": [
+        "businessId",
+        "name",
+        "createdAt",
+        "updatedAt"
+      ]
     },
-    "Client": {
-      "title": "Client",
-      "description": "Client record private to the business owner",
+    "Service": {
+      "title": "Service",
+      "description": "Service catalog offering for a specific business",
       "type": "object",
       "properties": {
-        "ownerId": {
+        "businessId": {
           "type": "string",
-          "description": "Owner UID",
+          "description": "Owning business ID",
+          "minLength": 1,
           "maxLength": 128
         },
-        "name": {
+        "serviceName": {
           "type": "string",
-          "description": "Client full name",
-          "maxLength": 100
-        },
-        "company": {
-          "type": "string",
-          "description": "Company or shop name",
-          "maxLength": 100
-        },
-        "email": {
-          "type": "string",
-          "description": "Email address",
-          "maxLength": 100
-        },
-        "phone": {
-          "type": "string",
-          "description": "Phone number",
-          "maxLength": 30
-        },
-        "status": {
-          "type": "string",
-          "enum": ["lead", "active", "completed"],
-          "description": "Client status"
-        },
-        "totalValue": {
-          "type": "number",
-          "description": "Total value of closed work in INR"
-        },
-        "notes": {
-          "type": "string",
-          "description": "Internal notes",
-          "maxLength": 500
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        }
-      },
-      "required": ["ownerId", "name", "phone", "status"]
-    },
-    "FollowUp": {
-      "title": "FollowUp",
-      "description": "Follow-up schedule private to the business owner",
-      "type": "object",
-      "properties": {
-        "ownerId": {
-          "type": "string",
-          "maxLength": 128
-        },
-        "clientName": {
-          "type": "string",
-          "maxLength": 100
-        },
-        "scheduledDate": {
-          "type": "string",
-          "maxLength": 30
-        },
-        "notes": {
-          "type": "string",
-          "maxLength": 500
-        },
-        "status": {
-          "type": "string",
-          "enum": ["scheduled", "completed", "cancelled"]
-        },
-        "type": {
-          "type": "string",
-          "enum": ["call", "meeting", "visit", "message"]
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        }
-      },
-      "required": ["ownerId", "clientName", "scheduledDate", "status"]
-    },
-    "WorkOrder": {
-      "title": "WorkOrder",
-      "description": "Job order private to the business owner",
-      "type": "object",
-      "properties": {
-        "ownerId": {
-          "type": "string",
-          "maxLength": 128
-        },
-        "title": {
-          "type": "string",
-          "maxLength": 150
-        },
-        "clientName": {
-          "type": "string",
-          "maxLength": 100
-        },
-        "dueDate": {
-          "type": "string",
-          "maxLength": 30
-        },
-        "priority": {
-          "type": "string",
-          "enum": ["low", "medium", "high"]
-        },
-        "status": {
-          "type": "string",
-          "enum": ["pending", "in-progress", "completed"]
-        },
-        "amount": {
-          "type": "number"
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        }
-      },
-      "required": ["ownerId", "title", "clientName", "status"]
-    },
-    "Invoice": {
-      "title": "Invoice",
-      "description": "Financial billing record private to the business owner",
-      "type": "object",
-      "properties": {
-        "ownerId": {
-          "type": "string",
-          "maxLength": 128
-        },
-        "clientName": {
-          "type": "string",
-          "maxLength": 100
+          "description": "Display name of the service",
+          "minLength": 1,
+          "maxLength": 120
         },
         "description": {
           "type": "string",
-          "maxLength": 200
+          "description": "Detailed description of the service scope",
+          "maxLength": 1000
         },
-        "amount": {
-          "type": "number"
+        "durationMinutes": {
+          "type": "number",
+          "description": "Estimated service duration in minutes"
         },
-        "status": {
-          "type": "string",
-          "enum": ["paid", "pending"]
+        "typicalIntervalDays": {
+          "type": "number",
+          "description": "Typical follow-up or recurring cadence in days"
         },
-        "date": {
-          "type": "string",
-          "maxLength": 30
+        "basePrice": {
+          "type": "number",
+          "description": "Standard base price in local currency"
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Active status for booking"
         },
         "createdAt": {
           "type": "string",
-          "format": "date-time"
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
         }
       },
-      "required": ["ownerId", "clientName", "description", "amount", "status"]
+      "required": [
+        "businessId",
+        "serviceName",
+        "isActive",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Appointment": {
+      "title": "Appointment",
+      "description": "Scheduled booking linking a customer, service, and business",
+      "type": "object",
+      "properties": {
+        "businessId": {
+          "type": "string",
+          "description": "Owning business ID",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "customerId": {
+          "type": "string",
+          "description": "Referenced customer ID",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "serviceId": {
+          "type": "string",
+          "description": "Referenced service catalog ID",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "appointmentDate": {
+          "type": "string",
+          "description": "Date of appointment in ISO YYYY-MM-DD format",
+          "minLength": 8,
+          "maxLength": 30
+        },
+        "appointmentTime": {
+          "type": "string",
+          "description": "Start time in HH:mm format",
+          "minLength": 2,
+          "maxLength": 20
+        },
+        "endTime": {
+          "type": "string",
+          "description": "Optional completion time in HH:mm format",
+          "maxLength": 20
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "SCHEDULED",
+            "COMPLETED",
+            "CANCELLED",
+            "NO_SHOW"
+          ],
+          "description": "Appointment lifecycle state"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Appointment instructions or job notes",
+          "maxLength": 1000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
+        }
+      },
+      "required": [
+        "businessId",
+        "customerId",
+        "serviceId",
+        "appointmentDate",
+        "appointmentTime",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "FollowUp": {
+      "title": "FollowUp",
+      "description": "Post-service customer re-engagement schedule",
+      "type": "object",
+      "properties": {
+        "businessId": {
+          "type": "string",
+          "description": "Owning business ID",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "customerId": {
+          "type": "string",
+          "description": "Referenced customer ID",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "appointmentId": {
+          "type": "string",
+          "description": "Originating appointment ID",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "scheduledDate": {
+          "type": "string",
+          "description": "Follow-up due date in ISO YYYY-MM-DD format",
+          "minLength": 8,
+          "maxLength": 30
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PENDING",
+            "COMPLETED",
+            "CANCELLED"
+          ],
+          "description": "Follow-up action status"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Follow-up call or check-in notes",
+          "maxLength": 1000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
+        }
+      },
+      "required": [
+        "businessId",
+        "customerId",
+        "appointmentId",
+        "scheduledDate",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -226,31 +392,37 @@
       "schema": {
         "$ref": "#/entities/Business"
       },
-      "description": "Stores individual business profile isolated by owner UID"
+      "description": "Stores individual business profiles isolated by owner UID"
     },
-    "/businesses/{businessId}/clients/{clientId}": {
+    "/business_verifications/{verificationId}": {
       "schema": {
-        "$ref": "#/entities/Client"
+        "$ref": "#/entities/BusinessVerification"
       },
-      "description": "Stores client records scoped strictly to the authenticated owner"
+      "description": "Stores business identity verification records"
     },
-    "/businesses/{businessId}/followups/{followupId}": {
+    "/customers/{customerId}": {
+      "schema": {
+        "$ref": "#/entities/Customer"
+      },
+      "description": "Stores customer records scoped to owning business"
+    },
+    "/services/{serviceId}": {
+      "schema": {
+        "$ref": "#/entities/Service"
+      },
+      "description": "Stores service catalog items scoped to owning business"
+    },
+    "/appointments/{appointmentId}": {
+      "schema": {
+        "$ref": "#/entities/Appointment"
+      },
+      "description": "Stores appointment bookings scoped to owning business"
+    },
+    "/follow_ups/{followUpId}": {
       "schema": {
         "$ref": "#/entities/FollowUp"
       },
-      "description": "Stores client follow-ups scoped strictly to the authenticated owner"
-    },
-    "/businesses/{businessId}/tasks/{taskId}": {
-      "schema": {
-        "$ref": "#/entities/WorkOrder"
-      },
-      "description": "Stores tasks and work orders scoped strictly to the authenticated owner"
-    },
-    "/businesses/{businessId}/invoices/{invoiceId}": {
-      "schema": {
-        "$ref": "#/entities/Invoice"
-      },
-      "description": "Stores invoices and billing scoped strictly to the authenticated owner"
+      "description": "Stores customer follow-up tasks scoped to owning business"
     }
   }
 }

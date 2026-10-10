@@ -27,7 +27,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signInAsDemo, signInWithCustomAccount, checkOnboarded } = useAuth();
+  const { signInAsDemo, checkOnboarded, loginLocalAccount } = useAuth();
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,80 +35,49 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      // 1. Try Firebase Auth first
-      try {
-        const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
-        const user = userCredential.user;
+      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const user = userCredential.user;
 
-        // Check if business profile exists
-        const docRef = doc(db, 'businesses', user.uid);
-        const snap = await getDoc(docRef);
+      // Check if business profile exists for this authenticated UID
+      const docRef = doc(db, 'businesses', user.uid);
+      const snap = await getDoc(docRef);
 
-        await checkOnboarded();
+      await checkOnboarded();
 
-        if (snap.exists()) {
-          router.push('/dashboard');
-        } else {
-          router.push('/onboarding');
-        }
-        return;
-      } catch (firebaseErr: unknown) {
-        const fbMsg = firebaseErr instanceof Error ? firebaseErr.message : '';
-        // If Firebase operation is not allowed or user not in Firebase Auth, check our registered accounts database
-        const shouldFallback = fbMsg.includes('auth/operation-not-allowed') || 
-                               fbMsg.includes('auth/user-not-found') || 
-                               fbMsg.includes('auth/invalid-credential');
-        
-        if (!shouldFallback) {
-          throw firebaseErr;
-        }
-
-        // Try API fallback
-        const res = await fetch('/api/auth', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'login',
-            email: email.trim(),
-            password,
-          }),
-        });
-
-        const data = await res.json();
-        if (res.ok && data.success && data.user) {
-          if (data.business && typeof window !== 'undefined') {
-            localStorage.setItem(
-              `serviceloop_registered_business_${data.user.uid}`,
-              JSON.stringify(data.business)
-            );
-          }
-          signInWithCustomAccount(data.user);
-          return;
-        }
-
-        if (res.status === 401) {
-          setError('Incorrect password. Please try again.');
-          return;
-        }
-
-        if (res.status === 404) {
-          setError('No business account found with this email. If you are new, please register below.');
-          return;
-        }
-
-        if (fbMsg.includes('auth/operation-not-allowed')) {
-          setError('Firebase Email/Password provider is disabled in the Firebase Console. You can use Google Sign In, instant Demo Mode, or register a new business account below.');
-          return;
-        }
-
-        throw new Error(data.error || 'Failed to sign in');
+      if (snap.exists()) {
+        router.push('/dashboard');
+      } else {
+        router.push('/onboarding');
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to sign in';
-      if (message.includes('auth/invalid-credential') || message.includes('auth/user-not-found')) {
+
+      // If Firebase Auth provider is disabled or user is in local registration registry, log them in
+      if (
+        message.includes('auth/operation-not-allowed') ||
+        message.includes('auth/invalid-credential') ||
+        message.includes('auth/user-not-found') ||
+        message.includes('OPERATION_NOT_ALLOWED')
+      ) {
+        const localResult = loginLocalAccount(email.trim(), password);
+        if (localResult.success) {
+          router.push('/dashboard');
+          return;
+        } else if (
+          message.includes('auth/operation-not-allowed') ||
+          message.includes('OPERATION_NOT_ALLOWED')
+        ) {
+          setError(localResult.error || 'No business account found with this email. Please register below.');
+          return;
+        }
+      }
+
+      if (
+        message.includes('auth/invalid-credential') ||
+        message.includes('auth/user-not-found') ||
+        message.includes('auth/wrong-password')
+      ) {
         setError('No business account found with this email or password is incorrect. If you are new, please register below.');
-      } else if (message.includes('auth/operation-not-allowed')) {
-        setError('Firebase Email/Password provider is disabled in the Firebase Console. You can use Google Sign In, instant Demo Mode, or register a new business account below.');
       } else {
         setError(message);
       }
@@ -288,6 +257,15 @@ export default function LoginPage() {
               <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
               100% private isolated workspace
             </p>
+            <div className="mt-3 pt-3 border-t border-zinc-200/60">
+              <Link 
+                href="/admin/login" 
+                className="text-[11px] font-semibold text-slate-500 hover:text-indigo-600 transition-colors inline-flex items-center gap-1"
+              >
+                <span>Platform Administrator? Access Admin Portal</span>
+                <ArrowRight className="w-3 h-3" />
+              </Link>
+            </div>
           </div>
         </div>
 

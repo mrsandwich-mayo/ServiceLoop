@@ -3,7 +3,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 1. Global Safety Net: default-deny all
+    // Global Safety Net: default-deny all
     match /{document=**} {
       allow read, write: if false;
     }
@@ -25,62 +25,251 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Checks whether authenticated user is the owner of the given businessId
     function isBusinessOwner(businessId) {
-      return isSignedIn() && isValidId(businessId) && request.auth.uid == businessId;
+      return isSignedIn() && isValidId(businessId) && (
+        request.auth.uid == businessId ||
+        (exists(/databases/$(database)/documents/businesses/$(businessId)) &&
+         get(/databases/$(database)/documents/businesses/$(businessId)).data.ownerId == request.auth.uid)
+      );
     }
 
+    // ------------------------------------------------------------------------
+    // Validation Helpers
+    // ------------------------------------------------------------------------
     function isValidBusiness(data) {
-      return data.keys().hasAll(['ownerId', 'ownerName', 'businessName', 'businessType', 'location', 'createdAt', 'updatedAt'])
+      return data.keys().hasAll(['ownerId', 'ownerName', 'businessName', 'businessType'])
         && data.ownerId is string && data.ownerId.size() > 0 && data.ownerId.size() <= 128 && data.ownerId == request.auth.uid
         && data.ownerName is string && data.ownerName.size() >= 1 && data.ownerName.size() <= 100
         && data.businessName is string && data.businessName.size() >= 1 && data.businessName.size() <= 100
-        && data.businessType is string && data.businessType.size() >= 1 && data.businessType.size() <= 50
-        && data.location is string && data.location.size() >= 1 && data.location.size() <= 120
-        && data.createdAt is string && data.createdAt.size() <= 50
-        && data.updatedAt is string && data.updatedAt.size() <= 50
+        && data.businessType is string && data.businessType.size() >= 1 && data.businessType.size() <= 100
+        && (!('location' in data) || (data.location is string && data.location.size() <= 120))
         && (!('phone' in data) || (data.phone is string && data.phone.size() <= 50))
         && (!('email' in data) || (data.email is string && data.email.size() <= 120));
     }
 
-    // Business profile document - strictly keyed by owner UID
+    function isValidVerification(data) {
+      return data.keys().hasAll(['businessId', 'verificationStatus', 'documentType', 'documentReference'])
+        && isValidId(data.businessId)
+        && isBusinessOwner(data.businessId)
+        && data.documentType is string && data.documentType.size() >= 1 && data.documentType.size() <= 50
+        && data.documentReference is string && data.documentReference.size() >= 1 && data.documentReference.size() <= 100
+        && data.verificationStatus in ['PENDING', 'VERIFIED', 'REJECTED'];
+    }
+
+    function isValidCustomer(data) {
+      return data.keys().hasAll(['businessId', 'name'])
+        && isValidId(data.businessId)
+        && isBusinessOwner(data.businessId)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 100
+        && (!('phone' in data) || data.phone == null || (data.phone is string && data.phone.size() <= 50))
+        && (!('email' in data) || data.email == null || (data.email is string && data.email.size() <= 120))
+        && (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 1000));
+    }
+
+    function isValidService(data) {
+      return data.keys().hasAll(['businessId', 'serviceName', 'isActive'])
+        && isValidId(data.businessId)
+        && isBusinessOwner(data.businessId)
+        && data.serviceName is string && data.serviceName.size() >= 1 && data.serviceName.size() <= 120
+        && data.isActive is bool
+        && (!('description' in data) || data.description == null || (data.description is string && data.description.size() <= 1000))
+        && (!('durationMinutes' in data) || data.durationMinutes == null || data.durationMinutes is number)
+        && (!('typicalIntervalDays' in data) || data.typicalIntervalDays == null || data.typicalIntervalDays is number)
+        && (!('basePrice' in data) || data.basePrice == null || data.basePrice is number);
+    }
+
+    function isValidAppointment(data) {
+      return data.keys().hasAll(['businessId', 'customerId', 'serviceId', 'appointmentDate', 'appointmentTime', 'status'])
+        && isValidId(data.businessId)
+        && isBusinessOwner(data.businessId)
+        && isValidId(data.customerId)
+        && isValidId(data.serviceId)
+        && data.appointmentDate is string && data.appointmentDate.size() >= 8 && data.appointmentDate.size() <= 30
+        && data.appointmentTime is string && data.appointmentTime.size() >= 2 && data.appointmentTime.size() <= 20
+        && data.status in ['SCHEDULED', 'COMPLETED', 'CANCELLED', 'NO_SHOW']
+        && (!('endTime' in data) || data.endTime == null || (data.endTime is string && data.endTime.size() <= 20))
+        && (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 1000));
+    }
+
+    function isValidFollowUp(data) {
+      return data.keys().hasAll(['businessId', 'customerId', 'appointmentId', 'scheduledDate', 'status'])
+        && isValidId(data.businessId)
+        && isBusinessOwner(data.businessId)
+        && isValidId(data.customerId)
+        && isValidId(data.appointmentId)
+        && data.scheduledDate is string && data.scheduledDate.size() >= 8 && data.scheduledDate.size() <= 30
+        && data.status in ['PENDING', 'COMPLETED', 'CANCELLED']
+        && (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 1000));
+    }
+
+    // ------------------------------------------------------------------------
+    // 1. BUSINESSES Collection
+    // ------------------------------------------------------------------------
     match /businesses/{businessId} {
-      allow get: if isBusinessOwner(businessId)
-        && existing().ownerId == request.auth.uid;
+      allow get: if isSignedIn()
+        && isValidId(businessId)
+        && (request.auth.uid == businessId || existing().ownerId == request.auth.uid);
 
       allow list: if isSignedIn()
         && resource.data.ownerId == request.auth.uid;
 
-      allow create: if isBusinessOwner(businessId)
+      allow create: if isSignedIn()
+        && isValidId(businessId)
         && isValidBusiness(incoming())
         && incoming().ownerId == request.auth.uid;
 
-      allow update: if isBusinessOwner(businessId)
+      allow update: if isSignedIn()
+        && isValidId(businessId)
         && isValidBusiness(incoming())
         && existing().ownerId == request.auth.uid
-        && incoming().ownerId == existing().ownerId
-        && incoming().createdAt == existing().createdAt;
+        && incoming().ownerId == existing().ownerId;
 
-      allow delete: if isBusinessOwner(businessId)
+      allow delete: if isSignedIn()
+        && isValidId(businessId)
         && existing().ownerId == request.auth.uid;
 
-      // Subcollections: clients, followups, tasks, invoices
-      // Scoped strictly under /businesses/{businessId}/... where businessId == request.auth.uid
+      // Legacy subcollection support during transitional phase
       match /{subcollection}/{docId} {
         allow get, list: if isBusinessOwner(businessId);
-
-        allow create: if isBusinessOwner(businessId)
-          && isValidId(docId)
-          && incoming().ownerId == request.auth.uid;
-
-        allow update: if isBusinessOwner(businessId)
-          && isValidId(docId)
-          && existing().ownerId == request.auth.uid
-          && incoming().ownerId == existing().ownerId;
-
-        allow delete: if isBusinessOwner(businessId)
-          && isValidId(docId)
-          && existing().ownerId == request.auth.uid;
+        allow create, update, delete: if isBusinessOwner(businessId) && isValidId(docId);
       }
     }
+
+    // ------------------------------------------------------------------------
+    // 2. BUSINESS VERIFICATIONS Collection
+    // ------------------------------------------------------------------------
+    match /business_verifications/{verificationId} {
+      allow get: if isSignedIn()
+        && isValidId(verificationId)
+        && isBusinessOwner(existing().businessId);
+
+      allow list: if isSignedIn()
+        && resource.data.businessId == request.auth.uid;
+
+      allow create: if isSignedIn()
+        && isValidId(verificationId)
+        && isValidVerification(incoming())
+        && incoming().verificationStatus == 'PENDING'
+        && incoming().reviewedBy == null
+        && incoming().reviewedAt == null
+        && incoming().rejectionReason == null;
+
+      allow update: if isSignedIn()
+        && isValidId(verificationId)
+        && isBusinessOwner(existing().businessId)
+        && existing().businessId == incoming().businessId
+        && incoming().verificationStatus == existing().verificationStatus
+        && incoming().reviewedBy == existing().reviewedBy;
+
+      allow delete: if isSignedIn()
+        && isValidId(verificationId)
+        && isBusinessOwner(existing().businessId);
+    }
+
+    // ------------------------------------------------------------------------
+    // 3. CUSTOMERS Collection
+    // ------------------------------------------------------------------------
+    match /customers/{customerId} {
+      allow get: if isSignedIn()
+        && isValidId(customerId)
+        && isBusinessOwner(existing().businessId);
+
+      allow list: if isSignedIn()
+        && resource.data.businessId == request.auth.uid;
+
+      allow create: if isSignedIn()
+        && isValidId(customerId)
+        && isValidCustomer(incoming());
+
+      allow update: if isSignedIn()
+        && isValidId(customerId)
+        && isBusinessOwner(existing().businessId)
+        && incoming().businessId == existing().businessId
+        && isValidCustomer(incoming());
+
+      allow delete: if isSignedIn()
+        && isValidId(customerId)
+        && isBusinessOwner(existing().businessId);
+    }
+
+    // ------------------------------------------------------------------------
+    // 4. SERVICES Collection
+    // ------------------------------------------------------------------------
+    match /services/{serviceId} {
+      allow get: if isSignedIn()
+        && isValidId(serviceId)
+        && isBusinessOwner(existing().businessId);
+
+      allow list: if isSignedIn()
+        && resource.data.businessId == request.auth.uid;
+
+      allow create: if isSignedIn()
+        && isValidId(serviceId)
+        && isValidService(incoming());
+
+      allow update: if isSignedIn()
+        && isValidId(serviceId)
+        && isBusinessOwner(existing().businessId)
+        && incoming().businessId == existing().businessId
+        && isValidService(incoming());
+
+      allow delete: if isSignedIn()
+        && isValidId(serviceId)
+        && isBusinessOwner(existing().businessId);
+    }
+
+    // ------------------------------------------------------------------------
+    // 5. APPOINTMENTS Collection
+    // ------------------------------------------------------------------------
+    match /appointments/{appointmentId} {
+      allow get: if isSignedIn()
+        && isValidId(appointmentId)
+        && isBusinessOwner(existing().businessId);
+
+      allow list: if isSignedIn()
+        && resource.data.businessId == request.auth.uid;
+
+      allow create: if isSignedIn()
+        && isValidId(appointmentId)
+        && isValidAppointment(incoming());
+
+      allow update: if isSignedIn()
+        && isValidId(appointmentId)
+        && isBusinessOwner(existing().businessId)
+        && incoming().businessId == existing().businessId
+        && isValidAppointment(incoming());
+
+      allow delete: if isSignedIn()
+        && isValidId(appointmentId)
+        && isBusinessOwner(existing().businessId);
+    }
+
+    // ------------------------------------------------------------------------
+    // 6. FOLLOW_UPS Collection
+    // ------------------------------------------------------------------------
+    match /follow_ups/{followUpId} {
+      allow get: if isSignedIn()
+        && isValidId(followUpId)
+        && isBusinessOwner(existing().businessId);
+
+      allow list: if isSignedIn()
+        && resource.data.businessId == request.auth.uid;
+
+      allow create: if isSignedIn()
+        && isValidId(followUpId)
+        && isValidFollowUp(incoming());
+
+      allow update: if isSignedIn()
+        && isValidId(followUpId)
+        && isBusinessOwner(existing().businessId)
+        && incoming().businessId == existing().businessId
+        && isValidFollowUp(incoming());
+
+      allow delete: if isSignedIn()
+        && isValidId(followUpId)
+        && isBusinessOwner(existing().businessId);
+    }
+
   }
 }

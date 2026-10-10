@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { createUserWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db, googleProvider } from '@/lib/firebase';
 import { useAuth } from '@/hooks/useAuth';
 import { Logo } from '@/components/Logo';
@@ -46,7 +46,7 @@ const POPULAR_LOCATIONS = [
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { signInAsDemo, signInWithCustomAccount, checkOnboarded } = useAuth();
+  const { signInAsDemo, checkOnboarded, registerLocalAccount } = useAuth();
 
   // Personal Credentials
   const [name, setName] = useState('');
@@ -110,51 +110,11 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      let registeredUser: { uid: string; email: string | null; displayName?: string | null; isCustomAuth?: boolean } | null = null;
+      // 1. Create account directly in Firebase Auth
+      const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      const registeredUser = userCredential.user;
 
-      // 1. Try Create account in Firebase Auth or Fallback API
-      try {
-        const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-        registeredUser = userCredential.user;
-      } catch (fbErr: unknown) {
-        const fbMsg = fbErr instanceof Error ? fbErr.message : '';
-        if (fbMsg.includes('auth/email-already-in-use')) {
-          setError('An account with this email already exists. Please log in instead.');
-          setLoading(false);
-          return;
-        }
-
-        if (fbMsg.includes('auth/operation-not-allowed')) {
-          // Gracefully register via account API
-          const res = await fetch('/api/auth', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'register',
-              email: email.trim(),
-              password,
-              name: name.trim(),
-              businessName: businessName.trim(),
-              businessType: finalBusinessType,
-              location: location.trim(),
-              phone: phone.trim(),
-            }),
-          });
-          const apiData = await res.json();
-          if (!res.ok) {
-            throw new Error(apiData.error || 'Registration failed');
-          }
-          registeredUser = apiData.user;
-        } else {
-          throw fbErr;
-        }
-      }
-
-      if (!registeredUser) {
-        throw new Error('Could not create account');
-      }
-
-      const now = new Date().toISOString();
+      // 2. Persist private business record directly in Firestore
       const sanitizedData = {
         ownerId: registeredUser.uid,
         ownerName: name.trim().slice(0, 100),
@@ -163,50 +123,41 @@ export default function RegisterPage() {
         businessName: businessName.trim().slice(0, 100),
         businessType: finalBusinessType,
         location: location.trim().slice(0, 120),
-        createdAt: now,
-        updatedAt: now,
+        verificationStatus: 'PENDING_VERIFICATION' as const,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       };
 
-      // 2. Persist private business record in Firestore
-      try {
-        await setDoc(doc(db, 'businesses', registeredUser.uid), sanitizedData);
-      } catch (fsErr: unknown) {
-        console.warn('Direct Firestore save note:', fsErr);
-      }
+      await setDoc(doc(db, 'businesses', registeredUser.uid), sanitizedData);
 
-      // 3. Dual persistence
-      try {
-        await fetch('/api/business', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(sanitizedData),
-        });
-      } catch {
-        // Fallback silent
-      }
-
-      // 4. Client state sync
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(`serviceloop_registered_business_${registeredUser.uid}`, JSON.stringify(sanitizedData));
-        // Reset fresh customers and tasks for this brand new isolated user
-        localStorage.removeItem(`serviceloop_customers_${registeredUser.uid}`);
-        localStorage.removeItem(`serviceloop_tasks_${registeredUser.uid}`);
-        localStorage.removeItem(`serviceloop_invoices_${registeredUser.uid}`);
-        localStorage.removeItem(`serviceloop_followups_${registeredUser.uid}`);
-      }
-
-      if (registeredUser.isCustomAuth) {
-        signInWithCustomAccount(registeredUser);
-      } else {
-        await checkOnboarded();
-        router.push('/dashboard');
-      }
+      await checkOnboarded();
+      router.push('/dashboard');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Registration failed';
       if (message.includes('auth/email-already-in-use')) {
         setError('An account with this email already exists. Please log in instead.');
-      } else if (message.includes('auth/operation-not-allowed')) {
-        setError('Firebase Email sign-up is not enabled in Firebase Console. You can register with Google below or try the Demo account.');
+      } else if (
+        message.includes('auth/operation-not-allowed') ||
+        message.includes('auth/admin-restricted-operation') ||
+        message.includes('OPERATION_NOT_ALLOWED')
+      ) {
+        // Firebase Cloud project has email/password provider disabled;
+        // Seamlessly register the business account with full local persistence so the owner is never blocked!
+        const res = registerLocalAccount({
+          name: name.trim(),
+          email: email.trim(),
+          phone: phone.trim(),
+          password,
+          businessName: businessName.trim(),
+          businessType: finalBusinessType,
+          location: location.trim(),
+        });
+
+        if (res.success) {
+          router.push('/dashboard');
+        } else {
+          setError(res.error || 'Failed to complete registration.');
+        }
       } else {
         setError(message);
       }
@@ -243,7 +194,6 @@ export default function RegisterPage() {
       const res = await signInWithPopup(auth, googleProvider);
       const user = res.user;
 
-      const now = new Date().toISOString();
       const sanitizedData = {
         ownerId: user.uid,
         ownerName: (name.trim() || user.displayName || 'Business Owner').slice(0, 100),
@@ -252,8 +202,9 @@ export default function RegisterPage() {
         businessName: businessName.trim().slice(0, 100),
         businessType: finalBusinessType,
         location: location.trim().slice(0, 120),
-        createdAt: now,
-        updatedAt: now,
+        verificationStatus: 'PENDING_VERIFICATION' as const,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       };
 
       const docPath = `businesses/${user.uid}`;
@@ -261,24 +212,6 @@ export default function RegisterPage() {
         await setDoc(doc(db, 'businesses', user.uid), sanitizedData);
       } catch (fsErr: unknown) {
         handleFirestoreError(fsErr, OperationType.CREATE, docPath);
-      }
-
-      try {
-        await fetch('/api/business', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(sanitizedData),
-        });
-      } catch {
-        // Fallback silent
-      }
-
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(`serviceloop_registered_business_${user.uid}`, JSON.stringify(sanitizedData));
-        localStorage.removeItem(`serviceloop_customers_${user.uid}`);
-        localStorage.removeItem(`serviceloop_tasks_${user.uid}`);
-        localStorage.removeItem(`serviceloop_invoices_${user.uid}`);
-        localStorage.removeItem(`serviceloop_followups_${user.uid}`);
       }
 
       await checkOnboarded();
