@@ -553,8 +553,18 @@ export default function Home() {
             <span aria-hidden="true" className="text-zinc-700">·</span>
             <span>Clean CRM for Indian enterprises & trades</span>
           </div>
-          <div>
-            &copy; 2026 ServiceLoop. All rights reserved.
+          <div className="flex items-center gap-4">
+            <Link 
+              href="/admin/login" 
+              className="text-zinc-400 hover:text-indigo-400 transition-colors inline-flex items-center gap-1 font-medium"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Admin Portal</span>
+            </Link>
+            <span aria-hidden="true" className="text-zinc-800">·</span>
+            <div>
+              &copy; 2026 ServiceLoop. All rights reserved.
+            </div>
           </div>
         </div>
       </footer>
