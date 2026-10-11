@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdminAuth } from '@/hooks/useAdminAuth';
 import { PRIMARY_ADMIN_EMAIL } from '@/lib/adminAuth';
@@ -20,7 +20,7 @@ import { motion } from 'motion/react';
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const { loginAsAdmin } = useAdminAuth(false);
+  const { loginAsAdmin, claimError } = useAdminAuth(false);
 
   const [email, setEmail] = useState(PRIMARY_ADMIN_EMAIL);
   const [passkey, setPasskey] = useState('');
@@ -28,7 +28,19 @@ export default function AdminLoginPage() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  const handleAdminLogin = (e: React.FormEvent) => {
+  // Check URL params or incoming claim errors
+  useEffect(() => {
+    if (claimError) {
+      setError(claimError);
+    } else if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('error') === 'unauthorized_claim') {
+        setError("Access denied: Your account is authenticated, but is missing the server-assigned 'admin: true' custom claim. Please contact the project administrator.");
+      }
+    }
+  }, [claimError]);
+
+  const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -38,47 +50,57 @@ export default function AdminLoginPage() {
       return;
     }
 
-    // Security check: only authorized platform administrators
-    if (
-      normEmail !== PRIMARY_ADMIN_EMAIL.toLowerCase() &&
-      !normEmail.endsWith('@serviceloop.in') &&
-      normEmail !== 'admin@serviceloop.com'
-    ) {
-      setError(`Access denied. '${normEmail}' is not registered with Platform Administrator privileges.`);
-      return;
-    }
-
     if (!passkey.trim()) {
-      setError('Please enter the administrator master passkey or security code.');
-      return;
-    }
-
-    if (passkey.trim().length < 6) {
-      setError('Administrator passkey must be at least 6 characters.');
+      setError('Please enter the administrator password.');
       return;
     }
 
     setLoading(true);
 
-    setTimeout(() => {
-      loginAsAdmin(normEmail, normEmail.startsWith('abdullah') ? 'Abdullah (Primary Admin)' : 'Platform Administrator');
-      setSuccess(true);
-      setTimeout(() => {
-        router.push('/admin');
-      }, 600);
-    }, 700);
-  };
+    try {
+      const result = await loginAsAdmin(normEmail, passkey);
+      if (!result.success) {
+        setError(result.error || 'Administrator authentication failed.');
+        setLoading(false);
+        return;
+      }
 
-  const handleQuickAuthorizePrimary = () => {
-    setError('');
-    setLoading(true);
-    setTimeout(() => {
-      loginAsAdmin(PRIMARY_ADMIN_EMAIL, 'Abdullah (Primary Admin)');
       setSuccess(true);
       setTimeout(() => {
         router.push('/admin');
       }, 500);
-    }, 400);
+    } catch (err: unknown) {
+      setLoading(false);
+      setError(err instanceof Error ? err.message : 'Authentication failed.');
+    }
+  };
+
+  const handleQuickAuthorizePrimary = async () => {
+    setError('');
+    setEmail(PRIMARY_ADMIN_EMAIL);
+
+    if (!passkey.trim()) {
+      setError(`Password required for ${PRIMARY_ADMIN_EMAIL}. Please enter your password to authenticate with Firebase Auth and verify the 'admin: true' custom claim.`);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await loginAsAdmin(PRIMARY_ADMIN_EMAIL, passkey);
+      if (!result.success) {
+        setError(result.error || 'Administrator authentication failed.');
+        setLoading(false);
+        return;
+      }
+
+      setSuccess(true);
+      setTimeout(() => {
+        router.push('/admin');
+      }, 500);
+    } catch (err: unknown) {
+      setLoading(false);
+      setError(err instanceof Error ? err.message : 'Authentication failed.');
+    }
   };
 
   return (
@@ -170,7 +192,7 @@ export default function AdminLoginPage() {
 
           <div>
             <label className="block text-xs font-medium text-slate-300 mb-1.5">
-              Master Admin Passkey / Security Code
+              Administrator Password / Master Passkey
             </label>
             <div className="relative">
               <KeyRound className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -224,7 +246,7 @@ export default function AdminLoginPage() {
         {/* Footer info */}
         <div className="mt-6 pt-4 border-t border-slate-800/80 text-center text-[11px] text-slate-400">
           <p>ServiceLoop Platform Governance System</p>
-          <p className="mt-0.5 text-slate-400">Session verified via cryptographic administrative token</p>
+          <p className="mt-0.5 text-slate-400">Session verified via Firebase Authentication & server-assigned &apos;admin: true&apos; custom claims</p>
         </div>
       </motion.div>
     </div>

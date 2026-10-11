@@ -162,6 +162,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (loading) return;
 
+    // Administrative routes are governed independently by useAdminAuth
+    if (pathname?.startsWith('/admin')) {
+      return;
+    }
+
     const isAuthRoute = pathname === '/login' || pathname === '/register';
     const isPublicRoute = pathname === '/' || isAuthRoute;
 
